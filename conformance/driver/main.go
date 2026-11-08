@@ -41,6 +41,7 @@ type step struct {
 	At         string         `json:"at"`
 	MessageID  string         `json:"messageId"`
 	Poison     bool           `json:"poison"`
+	NaN        bool           `json:"nan"`
 	Ms         int            `json:"ms"`
 }
 
@@ -127,11 +128,14 @@ func capture(st step) vexo.Capture {
 		}
 		c.Timestamp = at
 	}
+	if (st.Poison || st.NaN) && c.Properties == nil {
+		c.Properties = map[string]any{}
+	}
 	if st.Poison {
-		if c.Properties == nil {
-			c.Properties = map[string]any{}
-		}
-		c.Properties["poison"] = math.NaN()
+		c.Properties["poison"] = make(chan int) // encoding/json refuses a channel
+	}
+	if st.NaN {
+		c.Properties["nan"] = math.NaN()
 	}
 	return c
 }

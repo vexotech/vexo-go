@@ -159,7 +159,7 @@ Sends everything queued, stops the client's goroutine, and returns. See [Shut do
 `Capture` and `Identify` return an error, and drop that one message, when the message itself can't be queued:
 
 - `DistinctID` or `Event` is empty.
-- A property or trait can't be encoded as JSON, such as a channel, a function, or `math.NaN()`. The error wraps the `encoding/json` error. Values that `encoding/json` encodes as strings, such as a `time.Time` or a type that implements `encoding.TextMarshaler` (most UUID and decimal types), are sent as strings.
+- A property or trait can't be encoded as JSON, such as a channel, a function, or a NaN or infinite float anywhere in the message (the API would reject the whole batch). The error wraps the `encoding/json` error. Values that `encoding/json` encodes as strings, such as a `time.Time` or a type that implements `encoding.TextMarshaler` (most UUID and decimal types), are sent as strings.
 - The message is over 5 MB.
 - The queue is full (`vexo.ErrQueueFull`) or the client is closed (`vexo.ErrClosed`).
 

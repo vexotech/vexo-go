@@ -297,6 +297,11 @@ func TestDropsOnlyTheMessageThatCannotBeEncoded(t *testing.T) {
 	if err := c.Identify(Identify{DistinctID: "u", Traits: map[string]any{"score": math.NaN()}}); !errors.As(err, &valueErr) {
 		t.Errorf("NaN trait: err = %v, want a *json.UnsupportedValueError", err)
 	}
+	// The API refuses NaN and infinity anywhere in a batch, so a nested one drops its message too.
+	nested := map[string]any{"cart": []any{map[string]any{"price": math.Inf(1)}}}
+	if err := c.Capture(Capture{DistinctID: "u", Event: "inf", Properties: nested}); !errors.As(err, &valueErr) {
+		t.Errorf("nested infinity: err = %v, want a *json.UnsupportedValueError", err)
+	}
 	must(t, c.Close(context.Background()))
 
 	if got := api.events(); fmt.Sprint(got) != "[ok]" {
