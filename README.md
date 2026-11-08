@@ -13,8 +13,6 @@ Send events and identifies to [Vexo](https://vexo.co) from your Go backend: purc
 go get github.com/vexotech/vexo-go
 ```
 
-While the `vexotech/vexo-go` repository is private, `go get` needs access to it: set `GOPRIVATE=github.com/vexotech/*` and give Git credentials for GitHub (for example, a `~/.netrc` entry or `git config url."git@github.com:".insteadOf "https://github.com/"`).
-
 ## Usage
 
 ```go
