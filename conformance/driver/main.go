@@ -42,6 +42,9 @@ type step struct {
 	MessageID  string         `json:"messageId"`
 	Poison     bool           `json:"poison"`
 	NaN        bool           `json:"nan"`
+	DateTime   string         `json:"dateTime"`
+	Decimal    *string        `json:"decimal"`
+	Invalid    bool           `json:"invalidUnicode"`
 	Ms         int            `json:"ms"`
 }
 
@@ -84,6 +87,9 @@ func main() {
 		config.MaxQueueSize = *o.MaxQueueSize
 	}
 	config.FlushInterval = millis(o.FlushIntervalMs)
+	if o.FlushIntervalMs != nil && *o.FlushIntervalMs == 0 {
+		config.FlushInterval = -1 // the timer off: Go's zero value means the default
+	}
 	config.Timeout = millis(o.TimeoutMs)
 	config.ShutdownTimeout = millis(o.ShutdownTimeoutMs)
 	client, err := vexo.New(s.APIKey, config)
@@ -122,13 +128,9 @@ func capture(st step) vexo.Capture {
 		c.Timestamp = time.UnixMilli(int64(*st.Timestamp))
 	}
 	if st.At != "" {
-		at, err := time.Parse(time.RFC3339, st.At)
-		if err != nil {
-			log.Fatal(err)
-		}
-		c.Timestamp = at
+		c.Timestamp = parseTime(st.At)
 	}
-	if (st.Poison || st.NaN) && c.Properties == nil {
+	if c.Properties == nil {
 		c.Properties = map[string]any{}
 	}
 	if st.Poison {
@@ -137,7 +139,24 @@ func capture(st step) vexo.Capture {
 	if st.NaN {
 		c.Properties["nan"] = math.NaN()
 	}
+	if st.DateTime != "" {
+		c.Properties["dateTime"] = parseTime(st.DateTime)
+	}
+	if st.Decimal != nil {
+		c.Properties["decimal"] = *st.Decimal // Go has no decimal type in the standard library
+	}
+	if st.Invalid {
+		c.Properties["invalidUnicode"] = "ok\xff"
+	}
 	return c
+}
+
+func parseTime(s string) time.Time {
+	t, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return t
 }
 
 func millis(ms *int) time.Duration {
