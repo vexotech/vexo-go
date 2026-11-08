@@ -71,8 +71,9 @@ type Capture struct {
 	DistinctID string
 	// Event is the event name. Required.
 	Event string
-	// Properties are encoded with encoding/json, so a time.Time or an encoding.TextMarshaler
-	// value is sent as a string.
+	// Properties are encoded with encoding/json, so an encoding.TextMarshaler value is sent as a
+	// string. A time.Time in Properties, or in a map[string]any or []any inside them, is sent the
+	// way every Vexo SDK sends a date-time: in UTC with milliseconds, "2026-11-07T12:00:00.000Z".
 	Properties map[string]any
 	// Timestamp is when the event happened. Default: the time you call Capture.
 	Timestamp time.Time
@@ -84,7 +85,7 @@ type Capture struct {
 type Identify struct {
 	// DistinctID names the person. Required.
 	DistinctID string
-	// Traits are encoded with encoding/json.
+	// Traits are encoded like Capture.Properties.
 	Traits map[string]any
 }
 
@@ -198,7 +199,7 @@ func (c *Client) Capture(m Capture) error {
 		Type:       "capture",
 		DistinctID: m.DistinctID,
 		Event:      m.Event,
-		Properties: orEmpty(m.Properties),
+		Properties: jsonObject(m.Properties, 0),
 		Timestamp:  timestamp.UnixMilli(),
 		MessageID:  id,
 	})
@@ -214,7 +215,7 @@ func (c *Client) Identify(m Identify) error {
 	if err != nil {
 		return err
 	}
-	return c.enqueue(identifyMessage{Type: "identify", DistinctID: m.DistinctID, Traits: orEmpty(m.Traits), MessageID: id})
+	return c.enqueue(identifyMessage{Type: "identify", DistinctID: m.DistinctID, Traits: jsonObject(m.Traits, 0), MessageID: id})
 }
 
 // Flush sends everything queued and returns when the queue is empty, or with ctx's error when ctx
@@ -338,12 +339,48 @@ func messageID(given string) (string, error) {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
 }
 
-// orEmpty returns m, or an empty map when m is nil, so the API gets {} rather than null.
-func orEmpty(m map[string]any) map[string]any {
-	if m == nil {
-		return map[string]any{}
+// The form every Vexo SDK sends a date-time in (SPEC.md M11), applied to a time in UTC.
+const timeLayout = "2006-01-02T15:04:05.000Z"
+
+// maxDepth bounds the copy that jsonObject makes, so a map that contains itself reaches
+// encoding/json, which reports the cycle, instead of recursing forever.
+const maxDepth = 1000
+
+// jsonObject returns a copy of properties or traits to encode: an empty map for nil, so the API gets
+// {} rather than null, and each time.Time inside it in the form of timeLayout.
+func jsonObject(m map[string]any, depth int) map[string]any {
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		out[k] = jsonValue(v, depth+1)
 	}
-	return m
+	return out
+}
+
+func jsonValue(v any, depth int) any {
+	if depth > maxDepth {
+		return v
+	}
+	switch v := v.(type) {
+	case time.Time:
+		return v.UTC().Format(timeLayout)
+	case *time.Time:
+		if v != nil {
+			return v.UTC().Format(timeLayout)
+		}
+	case map[string]any:
+		if v != nil {
+			return jsonObject(v, depth)
+		}
+	case []any:
+		if v != nil {
+			out := make([]any, len(v))
+			for i, item := range v {
+				out[i] = jsonValue(item, depth+1)
+			}
+			return out
+		}
+	}
+	return v
 }
 
 func orDefault[T int | time.Duration](value, def T) T {

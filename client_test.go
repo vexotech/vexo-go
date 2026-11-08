@@ -228,7 +228,7 @@ func TestSendsQueuedMessagesAsOneBatchWithTheAPIKey(t *testing.T) {
 	if fmt.Sprintf("%v %v %v", identify["type"], identify["distinctId"], identify["traits"]) != "identify user_1 map[plan:pro]" {
 		t.Errorf("identify = %v", identify)
 	}
-	if fmt.Sprintf("%v %v %v", capture["type"], capture["event"], capture["properties"]) != "capture purchase map[amount:42 at:2026-11-07T12:00:00Z]" {
+	if fmt.Sprintf("%v %v %v", capture["type"], capture["event"], capture["properties"]) != "capture purchase map[amount:42 at:2026-11-07T12:00:00.000Z]" {
 		t.Errorf("capture = %v", capture)
 	}
 	if capture["timestamp"] != json.Number("1794052800000") {
@@ -284,6 +284,40 @@ func TestRejectsInvalidMessagesWithoutSendingThem(t *testing.T) {
 	}
 }
 
+func TestSendsTimesInUTCWithMillisecondsAndReplacesInvalidUTF8(t *testing.T) {
+	api := newFakeAPI(t)
+	c, errs := newClient(t, api.URL, Config{})
+	paris := time.FixedZone("+01:00", 3600)
+	at := time.Date(2026, 11, 7, 13, 0, 0, 123456789, paris)
+	properties := map[string]any{
+		"at":      at,
+		"pointer": &at,
+		"nested":  []any{map[string]any{"when": at}},
+		"none":    map[string]any(nil),
+		"text":    "ok\xff",
+	}
+
+	must(t, c.Capture(Capture{DistinctID: "u", Event: "typed", Properties: properties}))
+	must(t, c.Identify(Identify{DistinctID: "u", Traits: map[string]any{"since": at}}))
+	must(t, c.Flush(context.Background()))
+
+	batch := api.snapshot()[0].batch
+	want := "map[at:2026-11-07T12:00:00.123Z nested:[map[when:2026-11-07T12:00:00.123Z]] none:<nil> " +
+		"pointer:2026-11-07T12:00:00.123Z text:ok\uFFFD]"
+	if got := fmt.Sprint(batch[0]["properties"]); got != want {
+		t.Errorf("properties = %s, want %s", got, want)
+	}
+	if got := fmt.Sprint(batch[1]["traits"]); got != "map[since:2026-11-07T12:00:00.123Z]" {
+		t.Errorf("traits = %s", got)
+	}
+	if properties["at"] != at {
+		t.Error("Capture changed the caller's map")
+	}
+	if len(errs.all()) != 0 {
+		t.Errorf("errors: %v", errs.all())
+	}
+}
+
 func TestDropsOnlyTheMessageThatCannotBeEncoded(t *testing.T) {
 	api := newFakeAPI(t)
 	c, _ := newClient(t, api.URL, Config{})
@@ -296,6 +330,11 @@ func TestDropsOnlyTheMessageThatCannotBeEncoded(t *testing.T) {
 	var valueErr *json.UnsupportedValueError
 	if err := c.Identify(Identify{DistinctID: "u", Traits: map[string]any{"score": math.NaN()}}); !errors.As(err, &valueErr) {
 		t.Errorf("NaN trait: err = %v, want a *json.UnsupportedValueError", err)
+	}
+	cycle := map[string]any{}
+	cycle["self"] = cycle
+	if err := c.Capture(Capture{DistinctID: "u", Event: "cycle", Properties: cycle}); !errors.As(err, &valueErr) {
+		t.Errorf("a map that contains itself: err = %v, want a *json.UnsupportedValueError", err)
 	}
 	// The API refuses NaN and infinity anywhere in a batch, so a nested one drops its message too.
 	nested := map[string]any{"cart": []any{map[string]any{"price": math.Inf(1)}}}

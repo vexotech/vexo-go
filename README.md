@@ -159,7 +159,9 @@ Sends everything queued, stops the client's goroutine, and returns. See [Shut do
 `Capture` and `Identify` return an error, and drop that one message, when the message itself can't be queued:
 
 - `DistinctID` or `Event` is empty.
-- A property or trait can't be encoded as JSON, such as a channel, a function, or a NaN or infinite float anywhere in the message (the API would reject the whole batch). The error wraps the `encoding/json` error. Values that `encoding/json` encodes as strings, such as a `time.Time` or a type that implements `encoding.TextMarshaler` (most UUID and decimal types), are sent as strings.
+- A property or trait can't be encoded as JSON, such as a channel, a function, a map that contains itself, or a NaN or infinite float anywhere in the message (the API would reject the whole batch). The error wraps the `encoding/json` error.
+
+Values are sent in the form every Vexo SDK uses. A `time.Time` is sent as an ISO 8601 string in UTC with milliseconds, such as `2026-11-07T12:00:00.000Z`, when it's a value in `Properties` or `Traits` or in a `map[string]any` or `[]any` inside them; inside a struct or a typed map or slice, `encoding/json` sends it in RFC 3339 with its own offset. A type that implements `encoding.TextMarshaler` or `json.Marshaler` (most UUID and decimal types) is sent the way it encodes itself, and invalid UTF-8 in a string is replaced with `U+FFFD`.
 - The message is over 5 MB.
 - The queue is full (`vexo.ErrQueueFull`) or the client is closed (`vexo.ErrClosed`).
 
