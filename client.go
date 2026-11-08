@@ -37,7 +37,8 @@ var (
 	ErrQueueFull = errors.New("vexo: the queue is full; message dropped")
 )
 
-// Config holds the client's options. A zero or negative field selects its default.
+// Config holds the client's options. A zero field selects its default; so does a negative one, except
+// MaxRetries, where a negative value disables retries.
 type Config struct {
 	// Host is the API base URL. Default: https://api.vexo.co.
 	Host string
