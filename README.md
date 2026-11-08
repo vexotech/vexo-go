@@ -123,7 +123,7 @@ Returns a client and starts its goroutine. It returns an error when `apiKey` is 
 | --- | --- | --- |
 | `Host` | `https://api.vexo.co` | API base URL. |
 | `FlushAt` | `100` | Send a batch when this many messages are queued (up to 500). |
-| `FlushInterval` | `10 * time.Second` | Send whatever is queued this often. |
+| `FlushInterval` | `10 * time.Second` | Send whatever is queued this often. A negative value turns the timer off (a zero value selects the default), so messages go out only on `FlushAt`, `Flush`, and `Close`. |
 | `MaxRetries` | `3` | Retries for network errors, `429`, and `5xx` responses. A negative value disables retries. |
 | `MaxQueueSize` | `10000` | Messages kept in memory; new messages are dropped once it's full. |
 | `Timeout` | `10 * time.Second` | Timeout of each HTTP request. |

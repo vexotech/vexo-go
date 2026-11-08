@@ -189,11 +189,11 @@ func TestNewAppliesDefaultsAndLimits(t *testing.T) {
 		t.Errorf("defaults = %v, want %v", got, want)
 	}
 
-	c2, err := New("key", Config{Host: "http://localhost:8080/", FlushAt: 1000, MaxRetries: -1})
+	c2, err := New("key", Config{Host: "http://localhost:8080/", FlushAt: 1000, MaxRetries: -1, FlushInterval: -1})
 	must(t, err)
 	defer c2.Close(context.Background())
-	if c2.url != "http://localhost:8080/v1/batch" || c2.flushAt != maxBatchSize || c2.maxRetries != 0 {
-		t.Errorf("url, flushAt, maxRetries = %q, %d, %d", c2.url, c2.flushAt, c2.maxRetries)
+	if c2.url != "http://localhost:8080/v1/batch" || c2.flushAt != maxBatchSize || c2.maxRetries != 0 || c2.flushInterval != 0 {
+		t.Errorf("url, flushAt, maxRetries, flushInterval = %q, %d, %d, %v", c2.url, c2.flushAt, c2.maxRetries, c2.flushInterval)
 	}
 
 	if _, err := New("", Config{}); err == nil {
@@ -355,6 +355,21 @@ func TestFlushesOnTheInterval(t *testing.T) {
 
 	must(t, c.Capture(Capture{DistinctID: "u", Event: "a"}))
 	waitFor(t, "a request", func() bool { return len(api.snapshot()) == 1 })
+}
+
+func TestANegativeFlushIntervalTurnsTheTimerOff(t *testing.T) {
+	api := newFakeAPI(t)
+	c, _ := newClient(t, api.URL, Config{FlushInterval: -1})
+
+	must(t, c.Capture(Capture{DistinctID: "u", Event: "a"}))
+	time.Sleep(100 * time.Millisecond)
+	if n := len(api.snapshot()); n != 0 {
+		t.Fatalf("got %d requests before Flush, want 0", n)
+	}
+	must(t, c.Flush(context.Background()))
+	if got := api.events(); fmt.Sprint(got) != "[a]" {
+		t.Errorf("sent %v, want [a]", got)
+	}
 }
 
 func TestFlushSendsEverythingQueuedInBatchesOfFlushAt(t *testing.T) {

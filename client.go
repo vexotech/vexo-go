@@ -37,14 +37,17 @@ var (
 	ErrQueueFull = errors.New("vexo: the queue is full; message dropped")
 )
 
-// Config holds the client's options. A zero field selects its default; so does a negative one, except
-// MaxRetries, where a negative value disables retries.
+// Config holds the client's options. A zero field selects its default. A negative MaxRetries disables
+// retries and a negative FlushInterval turns the interval timer off; any other negative field selects
+// its default.
 type Config struct {
 	// Host is the API base URL. Default: https://api.vexo.co.
 	Host string
 	// FlushAt sends a batch when this many messages are queued, up to 500. Default: 100.
 	FlushAt int
-	// FlushInterval sends whatever is queued this often. Default: 10s.
+	// FlushInterval sends whatever is queued this often. Default: 10s. A negative value turns the
+	// interval timer off, so only FlushAt, Flush, and Close send, like flushInterval 0 in the other
+	// Vexo SDKs.
 	FlushInterval time.Duration
 	// MaxRetries is how many times a batch is retried after a network error or a 429 or 5xx
 	// response. Default: 3. A negative value disables retries, like net.Dialer.KeepAlive.
@@ -108,7 +111,7 @@ type Client struct {
 	apiKey          string
 	url             string
 	flushAt         int
-	flushInterval   time.Duration
+	flushInterval   time.Duration // 0: no interval timer
 	maxRetries      int
 	maxQueueSize    int
 	shutdownTimeout time.Duration
@@ -148,6 +151,10 @@ func New(apiKey string, config Config) (*Client, error) {
 	if config.MaxRetries < 0 {
 		maxRetries = 0
 	}
+	flushInterval := orDefault(config.FlushInterval, 10*time.Second)
+	if config.FlushInterval < 0 {
+		flushInterval = 0 // no interval timer
+	}
 	onError := config.OnError
 	if onError == nil {
 		onError = func(err error) { log.Print(err) }
@@ -156,7 +163,7 @@ func New(apiKey string, config Config) (*Client, error) {
 		apiKey:          apiKey,
 		url:             host + "/v1/batch",
 		flushAt:         min(orDefault(config.FlushAt, 100), maxBatchSize),
-		flushInterval:   orDefault(config.FlushInterval, 10*time.Second),
+		flushInterval:   flushInterval,
 		maxRetries:      maxRetries,
 		maxQueueSize:    orDefault(config.MaxQueueSize, 10000),
 		shutdownTimeout: orDefault(config.ShutdownTimeout, 10*time.Second),
@@ -295,11 +302,15 @@ func (c *Client) enqueue(m any) error {
 // run is the client's one goroutine: it does all the sending.
 func (c *Client) run() {
 	defer close(c.done)
-	ticker := time.NewTicker(c.flushInterval)
-	defer ticker.Stop()
+	var tick <-chan time.Time // nil, so never ready, when the interval timer is off
+	if c.flushInterval > 0 {
+		ticker := time.NewTicker(c.flushInterval)
+		defer ticker.Stop()
+		tick = ticker.C
+	}
 	for {
 		select {
-		case <-ticker.C:
+		case <-tick:
 			c.drain()
 		case <-c.wake:
 			c.drain()
